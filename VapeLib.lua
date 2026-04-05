@@ -1161,7 +1161,7 @@ function VapeLib:CreateWindow(options)
                 modTitle.TextColor3 = enabled and VapeLib.Theme.Accent or VapeLib.Theme.Text
                 mainApi.ModulesEnabled[modName] = enabled
                 mainApi:UpdateArrayList()
-                task.spawn(callback, enabled)
+                task.spawn(callback, enabled, modApi)
                 if not skipSave then
                     mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                     mainApi.Config.Modules[modName].Enabled = enabled
