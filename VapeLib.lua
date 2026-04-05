@@ -81,6 +81,7 @@ local function createTooltip()
     tooltipGui.Parent = guiParent
     tooltipGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     tooltipGui.IgnoreGuiInset = true
+    tooltipGui.ResetOnSpawn = false
     
     local tooltipScale = Instance.new("UIScale")
     tooltipScale.Parent = tooltipGui
@@ -176,7 +177,7 @@ end
 
 function VapeLib:CreateWindow(options)
     options = options or {}
-    local scriptName = options.Name or "VapeLib"
+    local scriptName = options.Name or "Vape Lite"
     local scriptIcon = options.Icon or ""
     local iconSize = options.IconSize or 100
     local iconWidth = options.IconSizeWide or options.IconSizeWidth or iconSize
@@ -188,6 +189,7 @@ function VapeLib:CreateWindow(options)
     screenGui.Parent = guiParent
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     screenGui.IgnoreGuiInset = true
+    screenGui.ResetOnSpawn = false
 
     local uiScale = Instance.new("UIScale")
     uiScale.Parent = screenGui
@@ -199,8 +201,25 @@ function VapeLib:CreateWindow(options)
         Keybind = options.Keybind or Enum.KeyCode.RightShift,
         AccentElements = {},
         Config = loadConfig(scriptName, "config") or {Windows = {}, Modules = {}},
-        ModulesEnabled = {}
+        ModulesEnabled = {},
+        Keybinds = {}
     }
+
+    inputService.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if mainApi.Keybind ~= nil and input.KeyCode == mainApi.Keybind then
+            screenGui.Enabled = not screenGui.Enabled
+        end
+        
+        for modName, bind in pairs(mainApi.Keybinds) do
+            if input.KeyCode == bind then
+                local modData = VapeLib.Modules[modName]
+                if modData and modData.ToggleState then
+                    modData.ToggleState(not mainApi.ModulesEnabled[modName])
+                end
+            end
+        end
+    end)
 
     local arrayGui = Instance.new("ScreenGui")
     arrayGui.Name = httpService:GenerateGUID(false)
@@ -209,6 +228,7 @@ function VapeLib:CreateWindow(options)
     arrayGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     arrayGui.Enabled = false
     arrayGui.IgnoreGuiInset = true
+    arrayGui.ResetOnSpawn = false
 
     local arrayScale = Instance.new("UIScale")
     arrayScale.Parent = arrayGui
@@ -350,6 +370,7 @@ function VapeLib:CreateWindow(options)
     notifyGui.Parent = guiParent
     notifyGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     notifyGui.IgnoreGuiInset = true
+    notifyGui.ResetOnSpawn = false
 
     local notifyScale = Instance.new("UIScale")
     notifyScale.Parent = notifyGui
@@ -1128,7 +1149,11 @@ function VapeLib:CreateWindow(options)
 
             local enabled = false
             local expanded = false
-            local modApi = {Enabled = false}
+            local binding = false
+            local currentBind = nil
+
+            local modApi = {}
+            modApi.Enabled = false
 
             local function toggle(state, skipSave)
                 enabled = state
@@ -1143,6 +1168,47 @@ function VapeLib:CreateWindow(options)
                     saveConfig(scriptName, "config", mainApi.Config)
                 end
             end
+            modApi.Toggle = toggle
+
+            local bindBtn = Instance.new("TextButton")
+            bindBtn.Name = "Keybind"
+            bindBtn.Size = UDim2.fromOffset(40, 20)
+            bindBtn.Position = UDim2.new(1, -70, 0.5, -10)
+            bindBtn.BackgroundTransparency = 1
+            bindBtn.Text = "[NONE]"
+            bindBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+            bindBtn.TextSize = 13
+            bindBtn.Font = VapeLib.Theme.Font
+            bindBtn.TextXAlignment = Enum.TextXAlignment.Right
+            bindBtn.Parent = modFrame
+
+            local function setBind(key, skipSave)
+                currentBind = key
+                bindBtn.Text = key == nil and "[NONE]" or "["..key.Name:upper().."]"
+                mainApi.Keybinds[modName] = key
+                if not skipSave then
+                    mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
+                    mainApi.Config.Modules[modName].Keybind = key and key.Name or nil
+                    saveConfig(scriptName, "config", mainApi.Config)
+                end
+            end
+
+            bindBtn.MouseButton1Click:Connect(function()
+                binding = true
+                bindBtn.Text = "[...]"
+                local connection
+                connection = inputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.Keyboard then
+                        binding = false
+                        connection:Disconnect()
+                        if input.KeyCode == Enum.KeyCode.Escape then
+                            setBind(nil)
+                        else
+                            setBind(input.KeyCode)
+                        end
+                    end
+                end)
+            end)
 
             VapeLib.Modules[modName] = {
                 Object = modFrame,
@@ -1151,11 +1217,19 @@ function VapeLib:CreateWindow(options)
             }
 
             modFrame.MouseButton1Click:Connect(function()
-                toggle(not enabled)
+                if not binding then
+                    toggle(not enabled)
+                end
             end)
 
-            if mainApi.Config.Modules[modName] and mainApi.Config.Modules[modName].Enabled then
-                toggle(true, true)
+            if mainApi.Config.Modules[modName] then
+                if mainApi.Config.Modules[modName].Enabled then
+                    toggle(true, true)
+                end
+                if mainApi.Config.Modules[modName].Keybind then
+                    local suc, res = pcall(function() return Enum.KeyCode[mainApi.Config.Modules[modName].Keybind] end)
+                    if suc then setBind(res, true) end
+                end
             end
 
             table.insert(mainApi.AccentElements, {
@@ -1243,7 +1317,7 @@ function VapeLib:CreateWindow(options)
                 sFrame.Parent = settingsFrame
                 addTooltip(sFrame, sTooltip)
 
-                local sTitle = Instance.new("TextLabel")
+                local sTitle = Instance.new("TextBox")
                 sTitle.Size = UDim2.new(1, -20, 0, 20)
                 sTitle.Position = UDim2.fromOffset(20, 5)
                 sTitle.BackgroundTransparency = 1
@@ -1252,6 +1326,7 @@ function VapeLib:CreateWindow(options)
                 sTitle.TextSize = 14
                 sTitle.Font = VapeLib.Theme.Font
                 sTitle.TextXAlignment = Enum.TextXAlignment.Left
+                sTitle.ClearTextOnFocus = false
                 sTitle.Parent = sFrame
 
                 local sBkg = Instance.new("Frame")
@@ -1281,6 +1356,15 @@ function VapeLib:CreateWindow(options)
                         saveConfig(scriptName, "config", mainApi.Config)
                     end
                 end
+
+                sTitle.FocusLost:Connect(function(enter)
+                    local typed = tonumber(sTitle.Text:match("%d+%.?%d*"))
+                    if typed then
+                        setSlider(typed)
+                    else
+                        sTitle.Text = sName .. ": " .. value
+                    end
+                end)
 
                 sBkg.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
