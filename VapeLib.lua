@@ -1527,62 +1527,149 @@ function VapeLib:CreateWindow(options)
                 return { Set = setSlider }
             end
 
-            function modApi:CreateDropdown(dOptions)
-                dOptions = dOptions or {}
-                local dName = dOptions.Name or "Dropdown"
-                local list = dOptions.List or {}
-                local default = dOptions.Default or list[1]
-                local dCallback = dOptions.Function or function() end
-                local dTooltip = dOptions.Tooltip or ""
+			function modApi:CreateDropdown(dOptions)
+				dOptions = dOptions or {}
+				local dName = dOptions.Name or "Dropdown"
+				local list = dOptions.List or {}
+				local default = dOptions.Default or list[1]
+				local dCallback = dOptions.Function or function() end
+				local dTooltip = dOptions.Tooltip or ""
 
-                local dFrame = Instance.new("TextButton")
-                dFrame.Size = UDim2.new(1, 0, 0, 30)
-                dFrame.BackgroundColor3 = Color3.fromRGB(30, 29, 30)
-                dFrame.AutoButtonColor = false
-                dFrame.Text = ""
-                dFrame.Parent = settingsFrame
-                addTooltip(dFrame, dTooltip)
+				local dFrame = Instance.new("TextButton")
+				dFrame.Name = dName .. "Dropdown"
+				dFrame.Size = UDim2.new(1, 0, 0, 30)
+				dFrame.BackgroundColor3 = Color3.fromRGB(30, 29, 30)
+				dFrame.AutoButtonColor = false
+				dFrame.Text = ""
+				dFrame.ClipsDescendants = true
+				dFrame.Parent = settingsFrame
+				addTooltip(dFrame, dTooltip)
+				addCorner(dFrame)
 
-                local dTitle = Instance.new("TextLabel")
-                dTitle.Size = UDim2.new(1, -20, 1, 0)
-                dTitle.Position = UDim2.fromOffset(20, 0)
-                dTitle.BackgroundTransparency = 1
-                dTitle.Text = dName .. ": " .. default
-                dTitle.TextColor3 = VapeLib.Theme.Text
-                dTitle.TextSize = 14
-                dTitle.Font = VapeLib.Theme.Font
-                dTitle.TextXAlignment = Enum.TextXAlignment.Left
-                dTitle.Parent = dFrame
+				local dTitle = Instance.new("TextBox")
+				dTitle.Name = "Value"
+				dTitle.Size = UDim2.new(1, -60, 0, 30)
+				dTitle.Position = UDim2.fromOffset(20, 0)
+				dTitle.BackgroundTransparency = 1
+				dTitle.Text = dName .. ": " .. default
+				dTitle.TextColor3 = VapeLib.Theme.Text
+				dTitle.TextSize = 14
+				dTitle.Font = VapeLib.Theme.Font
+				dTitle.TextXAlignment = Enum.TextXAlignment.Left
+				dTitle.ClearTextOnFocus = false
+				dTitle.Parent = dFrame
 
-                local selected = default
-                local function setDropdown(val, skipSave)
-                    if typeof(val) == "table" then
-                        val = skipSave
-                        skipSave = nil
-                    end
-                    if table.find(list, val) then
-                        selected = val
-                        dTitle.Text = dName .. ": " .. selected
-                        task.spawn(dCallback, selected)
-                        if not skipSave then
-                            mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
-                            mainApi.Config.Modules[modName][dName] = selected
-                            saveConfig(configFolder, configName, mainApi.Config)
-                        end
-                    end
-                end
+				local dArrow = Instance.new("TextLabel")
+				dArrow.Name = "Arrow"
+				dArrow.Size = UDim2.fromOffset(20, 20)
+				dArrow.Position = UDim2.new(1, -25, 0, 5)
+				dArrow.BackgroundTransparency = 1
+				dArrow.Text = "v"
+				dArrow.TextColor3 = VapeLib.Theme.Text
+				dArrow.TextSize = 14
+				dArrow.Font = Enum.Font.SourceSansBold
+				dArrow.Parent = dFrame
 
-                dFrame.MouseButton1Click:Connect(function()
-                    local index = table.find(list, selected) or 0
-                    setDropdown(list[(index % #list) + 1])
-                end)
+				local dList = Instance.new("ScrollingFrame")
+				dList.Name = "List"
+				dList.Size = UDim2.new(1, -10, 0, 150)
+				dList.Position = UDim2.fromOffset(5, 35)
+				dList.BackgroundTransparency = 1
+				dList.ScrollBarThickness = 2
+				dList.ScrollBarImageColor3 = VapeLib.Theme.Accent
+				dList.Visible = false
+				dList.CanvasSize = UDim2.new(0, 0, 0, 0)
+				dList.Parent = dFrame
 
-                if mainApi.Config.Modules[modName] and mainApi.Config.Modules[modName][dName] ~= nil then
-                    setDropdown(mainApi.Config.Modules[modName][dName], true)
-                end
+				local dLayout = Instance.new("UIListLayout")
+				dLayout.Parent = dList
+				dLayout.Padding = UDim.new(0, 2)
 
-                return { Set = setDropdown }
-            end
+				dLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+					dList.CanvasSize = UDim2.new(0, 0, 0, dLayout.AbsoluteContentSize.Y)
+				end)
+
+				local selected = default
+				local expanded = false
+
+				local function setDropdown(val, skipSave)
+					if typeof(val) == "table" then
+						val = skipSave
+						skipSave = nil
+					end
+					selected = val
+					dTitle.Text = dName .. ": " .. selected
+					task.spawn(dCallback, selected)
+					if not skipSave then
+						mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
+						mainApi.Config.Modules[modName][dName] = selected
+						saveConfig(configFolder, configName, mainApi.Config)
+					end
+				end
+
+				local function updateList()
+					for _, child in pairs(dList:GetChildren()) do
+						if child:IsA("TextButton") then child:Destroy() end
+					end
+					for _, val in pairs(list) do
+						local btn = Instance.new("TextButton")
+						btn.Size = UDim2.new(1, 0, 0, 25)
+						btn.BackgroundColor3 = Color3.fromRGB(40, 39, 40)
+						btn.BorderSizePixel = 0
+						btn.Text = val
+						btn.TextColor3 = VapeLib.Theme.Text
+						btn.TextSize = 13
+						btn.Font = VapeLib.Theme.Font
+						btn.AutoButtonColor = false
+						btn.Parent = dList
+						addCorner(btn, UDim.new(0, 3))
+						
+						btn.MouseButton1Click:Connect(function()
+							setDropdown(val)
+							expanded = false
+							tweenService:Create(dFrame, VapeLib.Theme.Tween, {Size = UDim2.new(1, 0, 0, 30)}):Play()
+							dList.Visible = false
+							dArrow.Rotation = 0
+						end)
+					end
+				end
+
+				dTitle.FocusLost:Connect(function()
+					local text = dTitle.Text:gsub(dName .. ": ", "")
+					local bestMatch, bestScore = nil, -1
+					for _, val in pairs(list) do
+						if val:lower() == text:lower() then
+							bestMatch = val
+							break
+						end
+						if val:lower():find(text:lower()) then
+							bestMatch = val
+							break
+						end
+					end
+					if bestMatch then
+						setDropdown(bestMatch)
+					else
+						dTitle.Text = dName .. ": " .. selected
+					end
+				end)
+
+				dFrame.MouseButton1Click:Connect(function()
+					expanded = not expanded
+					updateList()
+					dList.Visible = expanded
+					dArrow.Rotation = expanded and 180 or 0
+					tweenService:Create(dFrame, VapeLib.Theme.Tween, {
+						Size = UDim2.new(1, 0, 0, expanded and 190 or 30)
+					}):Play()
+				end)
+
+				if mainApi.Config.Modules[modName] and mainApi.Config.Modules[modName][dName] ~= nil then
+					setDropdown(mainApi.Config.Modules[modName][dName], true)
+				end
+
+				return { Set = setDropdown }
+			end
 
             return modApi
         end
