@@ -51,7 +51,7 @@ local function addCorner(parent, radius)
     return corner
 end
 
-local function addBlur(parent)
+local function addBlur(parent, mainApi)
     local blur = Instance.new("ImageLabel")
     blur.Name = "Blur"
     blur.Size = UDim2.new(1, 89, 1, 52)
@@ -61,7 +61,9 @@ local function addBlur(parent)
     blur.ScaleType = Enum.ScaleType.Slice
     blur.SliceCenter = Rect.new(52, 31, 261, 502)
     blur.ZIndex = -1
+    blur.Visible = mainApi and mainApi.Config.GUISettings.BlurEnabled or false
     blur.Parent = parent
+    if mainApi then table.insert(mainApi.BlurElements, blur) end
     return blur
 end
 
@@ -211,7 +213,8 @@ function VapeLib:CreateWindow(options)
         Config = loadConfig(configFolder, configName) or {Windows = {}, Modules = {}, GUISettings = {}},
         ModulesEnabled = {},
         Keybinds = {},
-        Connections = {}
+        Connections = {},
+        BlurElements = {}
     }
 
     local function connect(signal, callback)
@@ -414,9 +417,10 @@ function VapeLib:CreateWindow(options)
         nFrame.Size = UDim2.new(1, 0, 0, 60)
         nFrame.BackgroundColor3 = VapeLib.Theme.Main
         nFrame.BorderSizePixel = 0
+        nFrame.ClipsDescendants = false
         nFrame.Parent = notifyContainer
         addCorner(nFrame)
-        addBlur(nFrame)
+        addBlur(nFrame, self)
 
         local nTitle = Instance.new("TextLabel")
         nTitle.Size = UDim2.new(1, -20, 0, 20)
@@ -494,9 +498,10 @@ function VapeLib:CreateWindow(options)
     end
     mainWindow.BackgroundColor3 = VapeLib.Theme.Main
     mainWindow.BorderSizePixel = 0
+    mainWindow.ClipsDescendants = false
     mainWindow.Parent = screenGui
     addCorner(mainWindow)
-    addBlur(mainWindow)
+    addBlur(mainWindow, mainApi)
 
     mainWindow:GetPropertyChangedSignal("Position"):Connect(function()
         mainApi.Config.Windows["Main"] = {X = mainWindow.AbsolutePosition.X, Y = mainWindow.AbsolutePosition.Y}
@@ -795,7 +800,10 @@ function VapeLib:CreateWindow(options)
     rainbowFrame.MouseButton1Click:Connect(function()
         toggleRainbow(not rainbowEnabled)
     end)
-    table.insert(mainApi.AccentElements, rainbowStatus)
+    table.insert(mainApi.AccentElements, {
+        Instance = rainbowStatus,
+        GetEnabled = function() return rainbowEnabled end
+    })
 
     task.spawn(function()
         local hue = 0
@@ -950,7 +958,10 @@ function VapeLib:CreateWindow(options)
     arrayListStatus.BackgroundColor3 = Color3.fromRGB(45, 44, 45)
     arrayListStatus.Parent = arrayListFrame
     addCorner(arrayListStatus, UDim.new(0, 3))
-    table.insert(mainApi.AccentElements, arrayListStatus)
+    table.insert(mainApi.AccentElements, {
+        Instance = arrayListStatus,
+        GetEnabled = function() return arrayListEnabled end
+    })
 
     local function toggleArrayList(state, skipSave)
         arrayListEnabled = state
@@ -965,6 +976,53 @@ function VapeLib:CreateWindow(options)
     arrayListFrame.MouseButton1Click:Connect(function()
         toggleArrayList(not arrayListEnabled)
     end)
+
+    local blurFrame = Instance.new("TextButton")
+    blurFrame.Size = UDim2.new(1, 0, 0, 30)
+    blurFrame.BackgroundColor3 = Color3.fromRGB(30, 29, 30)
+    blurFrame.AutoButtonColor = false
+    blurFrame.Text = ""
+    blurFrame.Parent = guiSettings
+
+    local blurTitle = Instance.new("TextLabel")
+    blurTitle.Size = UDim2.new(1, -40, 1, 0)
+    blurTitle.Position = UDim2.fromOffset(20, 0)
+    blurTitle.BackgroundTransparency = 1
+    blurTitle.Text = "GUI Blur"
+    blurTitle.TextColor3 = VapeLib.Theme.Text
+    blurTitle.TextSize = 14
+    blurTitle.Font = VapeLib.Theme.Font
+    blurTitle.TextXAlignment = Enum.TextXAlignment.Left
+    blurTitle.Parent = blurFrame
+
+    local blurStatus = Instance.new("Frame")
+    blurStatus.Size = UDim2.fromOffset(12, 12)
+    blurStatus.Position = UDim2.new(1, -25, 0.5, -6)
+    blurStatus.BackgroundColor3 = Color3.fromRGB(45, 44, 45)
+    blurStatus.Parent = blurFrame
+    addCorner(blurStatus, UDim.new(0, 3))
+    
+    local blurEnabled = false
+    local function toggleBlur(state, skipSave)
+        blurEnabled = state
+        blurStatus.BackgroundColor3 = blurEnabled and VapeLib.Theme.Accent or Color3.fromRGB(45, 44, 45)
+        for _, blur in pairs(mainApi.BlurElements) do
+            if blur then blur.Visible = blurEnabled end
+        end
+        if not skipSave then
+            mainApi.Config.GUISettings.BlurEnabled = blurEnabled
+            saveConfig(configFolder, configName, mainApi.Config)
+        end
+    end
+
+    blurFrame.MouseButton1Click:Connect(function()
+        toggleBlur(not blurEnabled)
+    end)
+
+    table.insert(mainApi.AccentElements, {
+        Instance = blurStatus,
+        GetEnabled = function() return blurEnabled end
+    })
 
     local globalDestructBtn = Instance.new("TextButton")
     globalDestructBtn.Size = UDim2.new(1, 0, 0, 35)
@@ -1046,10 +1104,10 @@ function VapeLib:CreateWindow(options)
         window.BackgroundColor3 = VapeLib.Theme.Main
         window.BorderSizePixel = 0
         window.Visible = true
-        window.ClipsDescendants = true
+        window.ClipsDescendants = false
         window.Parent = screenGui
         addCorner(window)
-        addBlur(window)
+        addBlur(window, mainApi)
 
         local header = Instance.new("Frame")
         header.Name = "Header"
@@ -1336,7 +1394,10 @@ function VapeLib:CreateWindow(options)
                 tStatus.BackgroundColor3 = tEnabled and VapeLib.Theme.Accent or Color3.fromRGB(45, 44, 45)
                 tStatus.Parent = tFrame
                 addCorner(tStatus, UDim.new(0, 3))
-                table.insert(mainApi.AccentElements, tStatus)
+                table.insert(mainApi.AccentElements, {
+                    Instance = tStatus,
+                    GetEnabled = function() return tEnabled end
+                })
 
                 local tEnabled = tDefault
                 local function setToggle(state, skipSave)
@@ -1488,7 +1549,7 @@ function VapeLib:CreateWindow(options)
                         if not skipSave then
                             mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                             mainApi.Config.Modules[modName][dName] = selected
-                            saveConfig(scriptName, "config", mainApi.Config)
+                            saveConfig(configFolder, configName, mainApi.Config)
                         end
                     end
                 end
@@ -1517,6 +1578,7 @@ function VapeLib:CreateWindow(options)
         if mainApi.Config.GUISettings.Scale then setScale(mainApi.Config.GUISettings.Scale, true) end
         if mainApi.Config.GUISettings.Rainbow then toggleRainbow(true, true) end
         if mainApi.Config.GUISettings.ArrayList then toggleArrayList(true, true) end
+        if mainApi.Config.GUISettings.BlurEnabled then toggleBlur(true, true) end
         if mainApi.Config.GUISettings.Bind then
             local suc, res = pcall(function() return Enum.KeyCode[mainApi.Config.GUISettings.Bind] end)
             if suc then
