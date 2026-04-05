@@ -1180,8 +1180,12 @@ function VapeLib:CreateWindow(options)
         header.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton2 then
                 windowExpanded = not windowExpanded
+                local contentHeight = containerLayout.AbsoluteContentSize.Y
                 tweenService:Create(window, VapeLib.Theme.Tween, {
-                    Size = UDim2.new(0, 200, 0, windowExpanded and (40 + containerLayout.AbsoluteContentSize.Y) or 40)
+                    Size = UDim2.new(0, 200, 0, windowExpanded and (40 + contentHeight) or 40)
+                }):Play()
+                tweenService:Create(container, VapeLib.Theme.Tween, {
+                    Size = UDim2.new(1, 0, 0, windowExpanded and contentHeight or 0)
                 }):Play()
             end
         end)
