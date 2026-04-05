@@ -30,8 +30,12 @@ local isfolder = isfolder or function() return false end
 
 local function saveConfig(folder, name, data)
     if not writefile then return end
-    if not isfolder(folder) then makefolder(folder) end
-    writefile(folder.."/"..name..".json", httpService:JSONEncode(data))
+    local path = ""
+    for _, part in ipairs(folder:split("/")) do
+        path = path .. (path == "" and "" or "/") .. part
+        if not isfolder(path) then makefolder(path) end
+    end
+    writefile(folder .. "/" .. name .. ".json", httpService:JSONEncode(data))
 end
 
 local function loadConfig(folder, name)
@@ -140,7 +144,7 @@ local function addTooltip(gui, text)
     end)
 end
 
-local function makeDraggable(gui, dragPart)
+local function makeDraggable(gui, dragPart, connections)
     local dragging
     local dragInput
     local dragStart
@@ -167,12 +171,13 @@ local function makeDraggable(gui, dragPart)
         end
     end)
 
-    inputService.InputChanged:Connect(function(input)
+    local con = inputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
             gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
+    if connections then table.insert(connections, con) end
 end
 
 function VapeLib:CreateWindow(options)
@@ -195,17 +200,27 @@ function VapeLib:CreateWindow(options)
     uiScale.Parent = screenGui
     table.insert(globalUIScales, uiScale)
 
+    local configFolder = scriptName .. "/games"
+    local configName = tostring(game.PlaceId)
+
     local mainApi = {
         ScreenGui = screenGui,
         Categories = {},
         Keybind = options.Keybind or Enum.KeyCode.RightShift,
         AccentElements = {},
-        Config = loadConfig(scriptName, "config") or {Windows = {}, Modules = {}},
+        Config = loadConfig(configFolder, configName) or {Windows = {}, Modules = {}, GUISettings = {}},
         ModulesEnabled = {},
-        Keybinds = {}
+        Keybinds = {},
+        Connections = {}
     }
 
-    inputService.InputBegan:Connect(function(input, gpe)
+    local function connect(signal, callback)
+        local con = signal:Connect(callback)
+        table.insert(mainApi.Connections, con)
+        return con
+    end
+
+    connect(inputService.InputBegan, function(input, gpe)
         if gpe then return end
         if mainApi.Keybind ~= nil and input.KeyCode == mainApi.Keybind then
             screenGui.Enabled = not screenGui.Enabled
@@ -300,7 +315,7 @@ function VapeLib:CreateWindow(options)
         updatePin()
     end)
 
-    makeDraggable(arrayContainer, arrayHeader)
+    makeDraggable(arrayContainer, arrayHeader, mainApi.Connections)
     updatePin()
 
     arrayContainer.MouseEnter:Connect(function()
@@ -494,7 +509,7 @@ function VapeLib:CreateWindow(options)
     mainHeader.BackgroundTransparency = 1
     mainHeader.Active = true
     mainHeader.Parent = mainWindow
-    makeDraggable(mainWindow, mainHeader)
+    makeDraggable(mainWindow, mainHeader, mainApi.Connections)
 
     local mainTitle
     if scriptIcon ~= "" then
@@ -713,25 +728,32 @@ function VapeLib:CreateWindow(options)
     hueKnob.Parent = hueFill
     addCorner(hueKnob, UDim.new(1, 0))
 
-    hueBkg.InputBegan:Connect(function(input)
+    local function setHue(percent, skipSave)
+        hueFill.Size = UDim2.fromScale(percent, 1)
+        mainApi:UpdateAccent(Color3.fromHSV(percent, 0.7, 0.9))
+        if not skipSave then
+            mainApi.Config.GUISettings.Hue = percent
+            saveConfig(scriptName, "config", mainApi.Config)
+        end
+    end
+
+    connect(hueBkg.InputBegan, function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local move = inputService.InputChanged:Connect(function(input)
+            local move = connect(inputService.InputChanged, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
                     local percent = math.clamp((input.Position.X - hueBkg.AbsolutePosition.X) / hueBkg.AbsoluteSize.X, 0, 1)
-                    hueFill.Size = UDim2.fromScale(percent, 1)
-                    mainApi:UpdateAccent(Color3.fromHSV(percent, 0.7, 0.9))
+                    setHue(percent)
                 end
             end)
             local endCon
-            endCon = inputService.InputEnded:Connect(function(input)
+            endCon = connect(inputService.InputEnded, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     move:Disconnect()
                     endCon:Disconnect()
                 end
             end)
             local percent = math.clamp((input.Position.X - hueBkg.AbsolutePosition.X) / hueBkg.AbsoluteSize.X, 0, 1)
-            hueFill.Size = UDim2.fromScale(percent, 1)
-            mainApi:UpdateAccent(Color3.fromHSV(percent, 0.7, 0.9))
+            setHue(percent)
         end
     end)
 
@@ -761,9 +783,17 @@ function VapeLib:CreateWindow(options)
     addCorner(rainbowStatus, UDim.new(0, 3))
 
     local rainbowEnabled = false
-    rainbowFrame.MouseButton1Click:Connect(function()
-        rainbowEnabled = not rainbowEnabled
+    local function toggleRainbow(state, skipSave)
+        rainbowEnabled = state
         rainbowStatus.BackgroundColor3 = rainbowEnabled and VapeLib.Theme.Accent or Color3.fromRGB(45, 44, 45)
+        if not skipSave then
+            mainApi.Config.GUISettings.Rainbow = rainbowEnabled
+            saveConfig(scriptName, "config", mainApi.Config)
+        end
+    end
+
+    rainbowFrame.MouseButton1Click:Connect(function()
+        toggleRainbow(not rainbowEnabled)
     end)
     table.insert(mainApi.AccentElements, rainbowStatus)
 
@@ -809,31 +839,35 @@ function VapeLib:CreateWindow(options)
     addCorner(scaleFill)
     table.insert(mainApi.AccentElements, scaleFill)
 
-    scaleBkg.InputBegan:Connect(function(input)
+    local function setScale(percent, skipSave)
+        scaleFill.Size = UDim2.fromScale(percent, 1)
+        local scaleVal = 0.5 + (percent * 1.5)
+        userScaleMultiplier = scaleVal
+        updateGlobalScale()
+        scaleTitle.Text = "GUI Scale: " .. math.round(scaleVal * 100) .. "%"
+        if not skipSave then
+            mainApi.Config.GUISettings.Scale = percent
+            saveConfig(scriptName, "config", mainApi.Config)
+        end
+    end
+
+    connect(scaleBkg.InputBegan, function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local move = inputService.InputChanged:Connect(function(input)
+            local move = connect(inputService.InputChanged, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
                     local percent = math.clamp((input.Position.X - scaleBkg.AbsolutePosition.X) / scaleBkg.AbsoluteSize.X, 0, 1)
-                    scaleFill.Size = UDim2.fromScale(percent, 1)
-                    local scaleVal = 0.5 + (percent * 1.5)
-                    userScaleMultiplier = scaleVal
-                    updateGlobalScale()
-                    scaleTitle.Text = "GUI Scale: " .. math.round(scaleVal * 100) .. "%"
+                    setScale(percent)
                 end
             end)
             local endCon
-            endCon = inputService.InputEnded:Connect(function(input)
+            endCon = connect(inputService.InputEnded, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     move:Disconnect()
                     endCon:Disconnect()
                 end
             end)
             local percent = math.clamp((input.Position.X - scaleBkg.AbsolutePosition.X) / scaleBkg.AbsoluteSize.X, 0, 1)
-            scaleFill.Size = UDim2.fromScale(percent, 1)
-            local scaleVal = 0.5 + (percent * 1.5)
-            userScaleMultiplier = scaleVal
-            updateGlobalScale()
-            scaleTitle.Text = "GUI Scale: " .. math.round(scaleVal * 100) .. "%"
+            setScale(percent)
         end
     end)
 
@@ -861,12 +895,14 @@ function VapeLib:CreateWindow(options)
         binding = true
         bindTitle.Text = "GUI Bind: ..."
         local connection
-        connection = inputService.InputBegan:Connect(function(input)
+        connection = connect(inputService.InputBegan, function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 mainApi.Keybind = input.KeyCode
                 bindTitle.Text = "GUI Bind: " .. input.KeyCode.Name
                 binding = false
                 connection:Disconnect()
+                mainApi.Config.GUISettings.Bind = input.KeyCode.Name
+                saveConfig(scriptName, "config", mainApi.Config)
             end
         end)
     end)
@@ -916,11 +952,18 @@ function VapeLib:CreateWindow(options)
     addCorner(arrayListStatus, UDim.new(0, 3))
     table.insert(mainApi.AccentElements, arrayListStatus)
 
-    local arrayListEnabled = false
-    arrayListFrame.MouseButton1Click:Connect(function()
-        arrayListEnabled = not arrayListEnabled
+    local function toggleArrayList(state, skipSave)
+        arrayListEnabled = state
         arrayListStatus.BackgroundColor3 = arrayListEnabled and VapeLib.Theme.Accent or Color3.fromRGB(45, 44, 45)
         arrayGui.Enabled = arrayListEnabled
+        if not skipSave then
+            mainApi.Config.GUISettings.ArrayList = arrayListEnabled
+            saveConfig(scriptName, "config", mainApi.Config)
+        end
+    end
+
+    arrayListFrame.MouseButton1Click:Connect(function()
+        toggleArrayList(not arrayListEnabled)
     end)
 
     local globalDestructBtn = Instance.new("TextButton")
@@ -937,6 +980,10 @@ function VapeLib:CreateWindow(options)
         for _, mod in pairs(VapeLib.Modules) do
             if mod.ToggleState then mod.ToggleState(false) end
         end
+        for _, con in pairs(mainApi.Connections) do
+            if con then con:Disconnect() end
+        end
+        mainApi.Connections = {}
         if tooltipGui then tooltipGui:Destroy() end
         if notifyGui then notifyGui:Destroy() end
         if arrayGui then arrayGui:Destroy() end
@@ -1010,7 +1057,7 @@ function VapeLib:CreateWindow(options)
         header.BackgroundTransparency = 1
         header.Active = true
         header.Parent = window
-        makeDraggable(window, header)
+        makeDraggable(window, header, mainApi.Connections)
 
         window:GetPropertyChangedSignal("Position"):Connect(function()
             mainApi.Config.Windows[catName] = {X = window.AbsolutePosition.X, Y = window.AbsolutePosition.Y}
@@ -1047,6 +1094,18 @@ function VapeLib:CreateWindow(options)
         container.ClipsDescendants = true
         container.Parent = window
         addCorner(container)
+
+        if mainApi.Config.GUISettings.Hue then setHue(mainApi.Config.GUISettings.Hue, true) end
+        if mainApi.Config.GUISettings.Scale then setScale(mainApi.Config.GUISettings.Scale, true) end
+        if mainApi.Config.GUISettings.Rainbow then toggleRainbow(true, true) end
+        if mainApi.Config.GUISettings.ArrayList then toggleArrayList(true, true) end
+        if mainApi.Config.GUISettings.Bind then
+            local suc, res = pcall(function() return Enum.KeyCode[mainApi.Config.GUISettings.Bind] end)
+            if suc then
+                mainApi.Keybind = res
+                bindTitle.Text = "GUI Bind: " .. res.Name
+            end
+        end
 
         local containerLayout = Instance.new("UIListLayout")
         containerLayout.Parent = container
@@ -1165,7 +1224,7 @@ function VapeLib:CreateWindow(options)
                 if not skipSave then
                     mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                     mainApi.Config.Modules[modName].Enabled = enabled
-                    saveConfig(scriptName, "config", mainApi.Config)
+                    saveConfig(configFolder, configName, mainApi.Config)
                 end
             end
             modApi.Toggle = toggle
@@ -1189,7 +1248,7 @@ function VapeLib:CreateWindow(options)
                 if not skipSave then
                     mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                     mainApi.Config.Modules[modName].Keybind = key and key.Name or nil
-                    saveConfig(scriptName, "config", mainApi.Config)
+                    saveConfig(configFolder, configName, mainApi.Config)
                 end
             end
 
@@ -1287,7 +1346,7 @@ function VapeLib:CreateWindow(options)
                     if not skipSave then
                         mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                         mainApi.Config.Modules[modName][tName] = tEnabled
-                        saveConfig(scriptName, "config", mainApi.Config)
+                        saveConfig(configFolder, configName, mainApi.Config)
                     end
                 end
 
@@ -1353,7 +1412,7 @@ function VapeLib:CreateWindow(options)
                     if not skipSave then
                         mainApi.Config.Modules[modName] = mainApi.Config.Modules[modName] or {}
                         mainApi.Config.Modules[modName][sName] = value
-                        saveConfig(scriptName, "config", mainApi.Config)
+                        saveConfig(configFolder, configName, mainApi.Config)
                     end
                 end
 
@@ -1452,6 +1511,20 @@ function VapeLib:CreateWindow(options)
         table.insert(mainApi.Categories, {Window = window})
         return catApi
     end
+
+    task.spawn(function()
+        if mainApi.Config.GUISettings.Hue then setHue(mainApi.Config.GUISettings.Hue, true) end
+        if mainApi.Config.GUISettings.Scale then setScale(mainApi.Config.GUISettings.Scale, true) end
+        if mainApi.Config.GUISettings.Rainbow then toggleRainbow(true, true) end
+        if mainApi.Config.GUISettings.ArrayList then toggleArrayList(true, true) end
+        if mainApi.Config.GUISettings.Bind then
+            local suc, res = pcall(function() return Enum.KeyCode[mainApi.Config.GUISettings.Bind] end)
+            if suc then
+                mainApi.Keybind = res
+                bindTitle.Text = "GUI Bind: " .. res.Name
+            end
+        end
+    end)
 
     return mainApi
 end
