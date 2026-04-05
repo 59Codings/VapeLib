@@ -1285,7 +1285,9 @@ function VapeLib:CreateWindow(options)
                     saveConfig(configFolder, configName, mainApi.Config)
                 end
             end
-            modApi.Toggle = toggle
+            function modApi:Toggle(state, skipSave)
+                return toggle(state, skipSave)
+            end
 
             local bindBtn = Instance.new("TextButton")
             bindBtn.Name = "Keybind"
@@ -1368,6 +1370,7 @@ function VapeLib:CreateWindow(options)
                 local tDefault = tOptions.Default or false
                 local tCallback = tOptions.Function or function() end
                 local tTooltip = tOptions.Tooltip or ""
+                local tEnabled = tDefault
 
                 local tFrame = Instance.new("TextButton")
                 tFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -1399,8 +1402,11 @@ function VapeLib:CreateWindow(options)
                     GetEnabled = function() return tEnabled end
                 })
 
-                local tEnabled = tDefault
                 local function setToggle(state, skipSave)
+                    if typeof(state) == "table" then
+                        state = skipSave
+                        skipSave = nil -- we don't have a third arg here usually
+                    end
                     tEnabled = state
                     tStatus.BackgroundColor3 = tEnabled and VapeLib.Theme.Accent or Color3.fromRGB(45, 44, 45)
                     task.spawn(tCallback, tEnabled)
@@ -1465,6 +1471,10 @@ function VapeLib:CreateWindow(options)
 
                 local value = default
                 local function setSlider(val, skipSave)
+                    if typeof(val) == "table" then
+                        val = skipSave
+                        skipSave = nil
+                    end
                     value = math.clamp(val, min, max)
                     local percent = (value - min) / (max - min)
                     sFill.Size = UDim2.fromScale(percent, 1)
@@ -1542,6 +1552,10 @@ function VapeLib:CreateWindow(options)
 
                 local selected = default
                 local function setDropdown(val, skipSave)
+                    if typeof(val) == "table" then
+                        val = skipSave
+                        skipSave = nil
+                    end
                     if table.find(list, val) then
                         selected = val
                         dTitle.Text = dName .. ": " .. selected
